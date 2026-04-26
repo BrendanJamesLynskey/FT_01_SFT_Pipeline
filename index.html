@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FT 01 — Supervised Fine-Tuning Pipeline</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-card: #0d1117;
+            --bg-code: #161b22;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --accent: #76B900;
+            --accent-dim: #76B90044;
+            --accent-glow: #76B90033;
+            --border: #21262d;
+            --font-display: 'Space Grotesk', sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+            --font-body: 'Inter', sans-serif;
+            --max-width: 900px;
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: var(--font-body);
+            font-size: 17px;
+            line-height: 1.7;
+            overflow-x: hidden;
+        }
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem 1.5rem;
+            text-align: center;
+            position: relative;
+        }
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        .hero > * { position: relative; z-index: 1; }
+        .series-label {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--accent);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 1rem;
+        }
+        .hero h1 {
+            font-family: var(--font-display);
+            font-size: clamp(2rem, 5vw, 3.2rem);
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1.2;
+            margin-bottom: 1rem;
+        }
+        .hero h1 .accent { color: var(--accent); }
+        .hero .subtitle {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            max-width: 640px;
+            margin-bottom: 2rem;
+        }
+        .tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            justify-content: center;
+            margin-bottom: 2.5rem;
+        }
+        .tag {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            background: var(--accent-dim);
+            white-space: nowrap;
+        }
+        .pipeline {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 0.25rem;
+            margin-bottom: 1rem;
+            max-width: var(--max-width);
+        }
+        .pipeline-step {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            padding: 0.3rem 0.7rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+        .pipeline-arrow { color: var(--accent); font-size: 0.9rem; font-weight: 700; }
+        .slide {
+            min-height: 100vh;
+            max-width: var(--max-width);
+            margin: 0 auto;
+            padding: 4rem 1.5rem;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .slide-number {
+            font-family: var(--font-display);
+            font-size: 5rem;
+            font-weight: 700;
+            color: var(--accent-dim);
+            position: absolute;
+            top: 2rem;
+            right: 1.5rem;
+            line-height: 1;
+            user-select: none;
+        }
+        .slide h2 {
+            font-family: var(--font-display);
+            font-size: 1.9rem;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 1.5rem;
+            line-height: 1.25;
+        }
+        .slide h3 {
+            font-family: var(--font-display);
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+        .slide p { margin-bottom: 1rem; color: var(--text-secondary); }
+        .slide p strong { color: var(--text-primary); }
+        .slide ul, .slide ol { margin-bottom: 1rem; padding-left: 1.5rem; color: var(--text-secondary); }
+        .slide li { margin-bottom: 0.4rem; }
+        .slide li strong { color: var(--text-primary); }
+        .slide code {
+            font-family: var(--font-mono);
+            font-size: 0.88em;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            padding: 0.05rem 0.35rem;
+            border-radius: 3px;
+            color: #c9d1d9;
+        }
+        .code-block {
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin: 1.25rem 0;
+            overflow: hidden;
+        }
+        .code-header {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--accent);
+            background: rgba(118, 185, 0, 0.08);
+            padding: 0.4rem 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .code-block pre { margin: 0; padding: 1rem; overflow-x: auto; }
+        .code-block code {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            line-height: 1.6;
+            color: #c9d1d9;
+            background: transparent;
+            border: none;
+            padding: 0;
+        }
+        .kw { color: #ff7b72; }
+        .fn { color: #d2a8ff; }
+        .str { color: #a5d6ff; }
+        .cm { color: #8b949e; font-style: italic; }
+        .num { color: #79c0ff; }
+        .type { color: #ffa657; }
+        .dir { color: #ff7b72; }
+        .mac { color: #ffa657; }
+        .table-wrap {
+            overflow-x: auto;
+            margin: 1.25rem 0;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+            text-align: left;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border);
+            font-family: var(--font-display);
+            white-space: nowrap;
+        }
+        td {
+            padding: 0.6rem 1rem;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+        tr:last-child td { border-bottom: none; }
+        tr:nth-child(even) td { background: rgba(13, 17, 23, 0.5); }
+        .diagram-flow {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .diagram-box {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            text-align: center;
+            white-space: nowrap;
+        }
+        .diagram-box.accent { border-color: var(--accent); color: var(--accent); background: rgba(118, 185, 0, 0.08); }
+        .diagram-box.dim { color: var(--text-secondary); border-color: var(--border); }
+        .diagram-arrow { color: var(--accent); font-size: 1.3rem; font-weight: 700; }
+        .diagram-vertical {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.3rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .diagram-vertical .diagram-arrow { font-size: 1.1rem; }
+        .hierarchy {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .hierarchy-level { display: flex; align-items: center; gap: 0.75rem; }
+        .hierarchy-label {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            min-width: 80px;
+            text-align: right;
+        }
+        .hierarchy-items { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+        .hierarchy-item {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+        .hierarchy-item.accent { border-color: var(--accent); color: var(--accent); background: rgba(118, 185, 0, 0.08); }
+        .diagram-grid {
+            display: grid;
+            gap: 0.75rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .diagram-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+        .diagram-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+        .diagram-panel {
+            padding: 1rem;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+        .diagram-panel.accent-border { border-left: 3px solid var(--accent); }
+        .diagram-panel h4 {
+            font-family: var(--font-display);
+            font-size: 1rem;
+            color: var(--accent);
+            margin-bottom: 0.5rem;
+        }
+        .diagram-panel p, .diagram-panel ul { font-size: 0.85rem; }
+        .callout {
+            background: var(--bg-card);
+            border-left: 3px solid var(--accent);
+            border-radius: 0 8px 8px 0;
+            padding: 1rem 1.25rem;
+            margin: 1.25rem 0;
+        }
+        .callout p { margin-bottom: 0; }
+        .callout p + p { margin-top: 0.5rem; }
+        .callout .callout-label {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.3rem;
+        }
+        .contents-list { list-style: none; padding-left: 0; counter-reset: contents; }
+        .contents-list li {
+            counter-increment: contents;
+            padding: 0.6rem 0;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .contents-list li:last-child { border-bottom: none; }
+        .contents-list li::before {
+            content: counter(contents, decimal-leading-zero);
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--accent);
+            min-width: 2rem;
+        }
+        .contents-list a { color: var(--text-primary); text-decoration: none; transition: color 0.2s; }
+        .contents-list a:hover { color: var(--accent); }
+        .footer {
+            text-align: center;
+            padding: 3rem 1.5rem;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            border-top: 1px solid var(--border);
+            max-width: var(--max-width);
+            margin: 0 auto;
+        }
+        .footer a { color: var(--accent); text-decoration: none; }
+        .footer a:hover { text-decoration: underline; }
+        .canvas-wrap {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1.25rem 0;
+            overflow-x: auto;
+        }
+        .canvas-wrap canvas, .canvas-wrap svg { display: block; margin: 0 auto; max-width: 100%; }
+        .badge {
+            display: inline-block;
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            padding: 0.1rem 0.45rem;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            vertical-align: middle;
+            margin-left: 0.3rem;
+        }
+        .badge.ok    { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+        .badge.warn  { border-color: #ffa657; color: #ffa657; background: rgba(255,166,87,0.08); }
+        .badge.bad   { border-color: #ff7b72; color: #ff7b72; background: rgba(255,123,114,0.08); }
+        @media (max-width: 640px) {
+            .slide { padding: 3rem 1rem; min-height: auto; }
+            .slide-number { font-size: 3rem; top: 1.5rem; right: 1rem; }
+            .slide h2 { font-size: 1.5rem; }
+            .diagram-grid.cols-2, .diagram-grid.cols-3 { grid-template-columns: 1fr; }
+            .pipeline { gap: 0.15rem; }
+            .pipeline-step { font-size: 0.6rem; padding: 0.2rem 0.4rem; }
+            .hero h1 { font-size: 1.8rem; }
+            table { font-size: 0.78rem; }
+        }
+    </style>
+</head>
+<body>
+<header class="hero">
+    <div class="series-label">Fine-Tuning &amp; PEFT Series &mdash; Presentation 01</div>
+    <h1>The <span class="accent">Supervised Fine-Tuning</span> Pipeline</h1>
+    <p class="subtitle">SFT datasets, chat templates, loss masking, sample packing, Axolotl / TRL / Unsloth / torchtune &mdash; everything between a base model and a well-behaved assistant.</p>
+
+    <div class="tags">
+        <span class="tag">SFT</span>
+        <span class="tag">Chat Templates</span>
+        <span class="tag">Loss Masking</span>
+        <span class="tag">Sample Packing</span>
+        <span class="tag">Axolotl</span>
+        <span class="tag">TRL</span>
+        <span class="tag">Unsloth</span>
+        <span class="tag">torchtune</span>
+    </div>
+
+    <div class="pipeline">
+        <span class="pipeline-step">Dataset</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Tokenise</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Mask</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Pack</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Train</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Eval</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Merge</span>
+    </div>
+</header>
+
+<section class="slide" id="slide-00">
+    <div class="slide-number">00</div>
+    <h2>Topics We'll Cover</h2>
+    <ul class="contents-list">
+        <li><a href="#slide-01">Why Fine-Tune &mdash; Capability vs Style; Alternatives</a></li>
+        <li><a href="#slide-02">Datasets &mdash; Instruction, Conversation, Format Converters</a></li>
+        <li><a href="#slide-03">Tokenisation &amp; Chat Templates (ChatML, Llama-3, Qwen)</a></li>
+        <li><a href="#slide-04">Loss Masking &mdash; Train Only on Assistant Tokens</a></li>
+        <li><a href="#slide-05">Sample Packing &mdash; More Tokens Per Step</a></li>
+        <li><a href="#slide-06">Frameworks &mdash; Axolotl, TRL, Unsloth, torchtune</a></li>
+        <li><a href="#slide-07">Evaluating SFT Runs &mdash; Perplexity, Eval Suites</a></li>
+        <li><a href="#slide-08">Hardware Reality &mdash; VRAM Math, Throughput, Multi-GPU</a></li>
+        <li><a href="#slide-09">What to Take Away</a></li>
+    </ul>
+</section>
+
+<section class="slide" id="slide-01">
+    <div class="slide-number">01</div>
+    <h2>Why Fine-Tune &mdash; Capability vs Style; Alternatives</h2>
+    <p>Supervised fine-tuning (SFT) updates a pre-trained base model's weights on a labelled dataset of (input, desired-output) pairs. It is the first training stage that turns a next-token predictor into something that behaves like an assistant. Understanding <em>when</em> to fine-tune versus reaching for a cheaper tool is the first decision in any LLM deployment.</p>
+
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>Fine-Tune When&hellip;</h4>
+            <ul>
+                <li>The model needs a <strong>new capability</strong> it lacks entirely &mdash; e.g. structured JSON output, domain vocabulary, code in an obscure language</li>
+                <li>You need <strong>consistent style</strong> (tone, format, persona) that is too verbose to repeat in every prompt</li>
+                <li>Latency or cost constraints mean <strong>short prompts</strong> are mandatory</li>
+                <li>The task requires <strong>domain knowledge denser than the context window</strong> can carry</li>
+            </ul>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Consider Alternatives When&hellip;</h4>
+            <ul>
+                <li><strong>RAG</strong>: knowledge is dynamic, large, or must stay auditable &mdash; grounding in retrieved documents is cheaper than baking facts into weights</li>
+                <li><strong>Prompting + few-shot</strong>: 3&ndash;10 demonstrations often suffice for format tasks; GPT-4o and Claude 3.5 are strong enough that style can be prompted</li>
+                <li><strong>Distillation</strong>: you want a smaller model to match a larger teacher &mdash; SFT from teacher-generated synthetic data, then prune or quantise</li>
+                <li><strong>Prompt caching</strong>: long system prompts are expensive but cacheable; check the maths before training</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">Rule of thumb</div>
+        <p>If a 2 000-token system prompt plus 5 few-shot examples achieves 90 % of the target quality, ship the prompt. Fine-tune when you need the remaining 10 %, or when the prompt would need to be embedded in millions of calls per day and cost becomes prohibitive.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-02">
+    <div class="slide-number">02</div>
+    <h2>Datasets &mdash; Instruction, Conversation, Format Converters</h2>
+    <p>Dataset quality dominates SFT outcomes far more than model size or training duration. The field has converged on two structural formats.</p>
+
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Format</th><th>Shape</th><th>Canonical examples</th><th>Typical size (deduplicated)</th></tr></thead>
+            <tbody>
+                <tr><td><strong>Alpaca / instruction</strong></td><td><code>{"instruction":..., "input":..., "output":...}</code></td><td>Alpaca (52 k), Dolly-15k, OpenHermes-2.5, SlimOrca</td><td>10 k&ndash;1 M rows</td></tr>
+                <tr><td><strong>ShareGPT / conversation</strong></td><td><code>{"conversations":[{"from":"human","value":...},{"from":"gpt","value":...}]}</code></td><td>ShareGPT90k, WizardLM-Evol, Capybara</td><td>50 k&ndash;500 k turns</td></tr>
+                <tr><td><strong>OpenAI messages</strong></td><td><code>{"messages":[{"role":"system",...},{"role":"user",...},{"role":"assistant",...}]}</code></td><td>Tulu-3-SFT, Orca-3</td><td>300 k&ndash;1 M</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h3>Format Converters</h3>
+    <p>Most frameworks accept multiple formats and convert internally. Axolotl's <code>datasets:</code> block takes a <code>type:</code> key (<code>alpaca</code>, <code>sharegpt</code>, <code>completion</code>, <code>context_qa</code>, &hellip;) and handles the mapping. TRL's <code>DataCollatorForCompletionOnlyLM</code> works on the tokenised stream after template application.</p>
+
+    <div class="callout">
+        <div class="callout-label">Data quality checklist</div>
+        <p><strong>Deduplication:</strong> MinHash + LSH at character n-gram level &mdash; Slimpajama found ~30 % overlap in raw C4. <strong>Length filtering:</strong> discard &lt;10 tokens (label noise) and &gt;8 192 tokens unless you intend long-context training. <strong>Language filtering:</strong> <code>fastText</code> lid.176 at threshold 0.65. <strong>PII scrubbing:</strong> regex + NER for emails, phone numbers, SSNs &mdash; especially if dataset comes from web crawls. <strong>Perplexity-based quality:</strong> score with a small KenLM or GPT-2 model; discard top-5 % outliers.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-03">
+    <div class="slide-number">03</div>
+    <h2>Tokenisation &amp; Chat Templates (ChatML, Llama-3, Qwen)</h2>
+    <p>A chat template is the byte-level contract that maps structured conversation turns into a flat token sequence the model was trained on. Using the wrong template is silent &mdash; training completes, but quality collapses at inference because the model sees token patterns it was never optimised against.</p>
+
+    <div class="code-block">
+        <div class="code-header">ChatML (OpenAI, Mistral models) &mdash; literal token strings</div>
+<pre><code><span class="str">&lt;|im_start|&gt;</span><span class="kw">system</span>
+<span class="str">You are a helpful assistant.</span><span class="str">&lt;|im_end|&gt;</span>
+<span class="str">&lt;|im_start|&gt;</span><span class="kw">user</span>
+<span class="str">What is gradient checkpointing?</span><span class="str">&lt;|im_end|&gt;</span>
+<span class="str">&lt;|im_start|&gt;</span><span class="kw">assistant</span>
+<span class="str">Gradient checkpointing trades compute for memory ...</span><span class="str">&lt;|im_end|&gt;</span></code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">Llama-3 (Meta, 2024) &mdash; BOS + header tokens</div>
+<pre><code><span class="str">&lt;|begin_of_text|&gt;&lt;|start_header_id|&gt;</span><span class="kw">system</span><span class="str">&lt;|end_header_id|&gt;</span>
+<span class="str">You are a helpful assistant.&lt;|eot_id|&gt;</span>
+<span class="str">&lt;|start_header_id|&gt;</span><span class="kw">user</span><span class="str">&lt;|end_header_id|&gt;</span>
+<span class="str">What is gradient checkpointing?&lt;|eot_id|&gt;</span>
+<span class="str">&lt;|start_header_id|&gt;</span><span class="kw">assistant</span><span class="str">&lt;|end_header_id|&gt;</span>
+<span class="str">Gradient checkpointing trades compute for memory ...&lt;|eot_id|&gt;</span></code></pre>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">Qwen-2.5 (Alibaba) &mdash; close to ChatML with different special token IDs</div>
+<pre><code><span class="str">&lt;|im_start|&gt;</span><span class="kw">system</span><span class="str">\n</span>
+<span class="str">You are Qwen, created by Alibaba Cloud.&lt;|im_end|&gt;\n</span>
+<span class="str">&lt;|im_start|&gt;</span><span class="kw">user</span><span class="str">\n</span>
+<span class="str">What is gradient checkpointing?&lt;|im_end|&gt;\n</span>
+<span class="str">&lt;|im_start|&gt;</span><span class="kw">assistant</span><span class="str">\n</span>
+<span class="str">Gradient checkpointing trades compute for memory ...&lt;|im_end|&gt;\n</span></code></pre>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">HuggingFace tokenizer.apply_chat_template</div>
+        <p>From <code>transformers&ge;4.34</code> every tokeniser ships a Jinja2 template in <code>tokenizer_config.json</code> under the <code>chat_template</code> key. Call <code>tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)</code> and you get the correctly formatted string. Never hand-format &mdash; template bugs are the single largest source of SFT regression.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-04">
+    <div class="slide-number">04</div>
+    <h2>Loss Masking &mdash; Train Only on Assistant Tokens</h2>
+    <p>In a standard causal-LM training loop the cross-entropy loss is computed over every token in the sequence. For SFT you almost always want to <em>mask out</em> the prompt tokens so that the model only learns to predict assistant responses. Computing loss on human turns is wasteful at best and actively harmful (the model learns to generate user-side content) at worst.</p>
+
+    <div class="canvas-wrap">
+        <svg viewBox="0 0 760 200" width="760" height="200" xmlns="http://www.w3.org/2000/svg">
+            <style>
+                .tok  { fill: #161b22; stroke: #30363d; }
+                .tok.sys { fill: rgba(118,185,0,0.06); stroke: #76B900; }
+                .tok.usr { fill: rgba(210,168,255,0.06); stroke: #d2a8ff; }
+                .tok.ast { fill: rgba(118,185,0,0.18); stroke: #76B900; }
+                .tl   { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: #8b949e; text-anchor: middle; }
+                .tl.ast { fill: #76B900; }
+                .lb   { font-family: 'Space Grotesk', sans-serif; font-size: 11px; font-weight: 600; fill: #e6edf3; }
+                .mask { fill: #ff7b72; fill-opacity: 0.15; stroke: #ff7b72; stroke-dasharray: 3 2; }
+                .train { fill: #76B900; fill-opacity: 0.15; stroke: #76B900; stroke-dasharray: 3 2; }
+            </style>
+            <!-- system tokens -->
+            <rect x="20"  y="60" width="60"  height="60" rx="4" class="tok sys"/>
+            <text x="50"  y="95" class="tl">&lt;|sys|&gt;</text>
+            <rect x="85"  y="60" width="60"  height="60" rx="4" class="tok sys"/>
+            <text x="115" y="95" class="tl">You are</text>
+            <rect x="150" y="60" width="60"  height="60" rx="4" class="tok sys"/>
+            <text x="180" y="95" class="tl">helpful</text>
+            <!-- user tokens -->
+            <rect x="215" y="60" width="60"  height="60" rx="4" class="tok usr"/>
+            <text x="245" y="95" class="tl">&lt;|usr|&gt;</text>
+            <rect x="280" y="60" width="60"  height="60" rx="4" class="tok usr"/>
+            <text x="310" y="95" class="tl">What is</text>
+            <rect x="345" y="60" width="60"  height="60" rx="4" class="tok usr"/>
+            <text x="375" y="95" class="tl">SFT?</text>
+            <!-- assistant tokens -->
+            <rect x="410" y="60" width="60"  height="60" rx="4" class="tok ast"/>
+            <text x="440" y="90" class="tl ast">&lt;|asst|&gt;</text>
+            <rect x="475" y="60" width="60"  height="60" rx="4" class="tok ast"/>
+            <text x="505" y="90" class="tl ast">SFT is</text>
+            <rect x="540" y="60" width="60"  height="60" rx="4" class="tok ast"/>
+            <text x="570" y="90" class="tl ast">fine</text>
+            <rect x="605" y="60" width="60"  height="60" rx="4" class="tok ast"/>
+            <text x="635" y="90" class="tl ast">-tuning</text>
+            <rect x="670" y="60" width="60"  height="60" rx="4" class="tok ast"/>
+            <text x="700" y="90" class="tl ast">&lt;|eot|&gt;</text>
+            <!-- mask overlay -->
+            <rect x="18"  y="58" width="393" height="64" rx="5" class="mask"/>
+            <text x="215" y="148" class="lb" style="fill:#ff7b72;font-size:10px;text-anchor:middle;">label = &minus;100 (masked, no gradient)</text>
+            <!-- train overlay -->
+            <rect x="408" y="58" width="324" height="64" rx="5" class="train"/>
+            <text x="570" y="148" class="lb" style="fill:#76B900;font-size:10px;text-anchor:middle;">label = token id (loss computed here)</text>
+        </svg>
+    </div>
+
+    <h3>Implementation in TRL</h3>
+    <div class="code-block">
+        <div class="code-header">trl &ge;0.8 &mdash; SFTTrainer with response_template masking</div>
+<pre><code><span class="kw">from</span> trl <span class="kw">import</span> <span class="type">SFTTrainer</span>, <span class="type">DataCollatorForCompletionOnlyLM</span>
+
+<span class="cm"># ChatML assistant header tokens</span>
+response_template = <span class="str">"&lt;|im_start|&gt;assistant\n"</span>
+collator = <span class="type">DataCollatorForCompletionOnlyLM</span>(
+    response_template=response_template,
+    tokenizer=tokenizer,
+    mlm=<span class="kw">False</span>,
+)
+
+trainer = <span class="type">SFTTrainer</span>(
+    model=model,
+    args=training_args,
+    train_dataset=dataset,
+    data_collator=collator,   <span class="cm"># &larr; this is all you need</span>
+)</code></pre>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">Axolotl equivalent</div>
+        <p>In Axolotl's YAML config, set <code>train_on_inputs: false</code>. Axolotl detects the template automatically from the model's tokeniser config and masks prompt tokens before packing. Setting this to <code>true</code> trains on all tokens &mdash; useful only for completion-style datasets with no user/assistant role distinction.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-05">
+    <div class="slide-number">05</div>
+    <h2>Sample Packing &mdash; More Tokens Per Step</h2>
+    <p>Naively, each batch entry is one conversation padded to the maximum sequence length. On typical instruction datasets where most examples are 256&ndash;512 tokens, padding a 2 048-token context wastes 75&ndash;87 % of the compute budget on <code>&lt;pad&gt;</code> tokens that produce zero gradient signal.</p>
+
+    <p><strong>Sample packing</strong> (also called <em>bin packing</em>) concatenates multiple short samples end-to-end within a single sequence until the context length is filled, with attention masking to prevent cross-contamination between packed items.</p>
+
+    <div class="diagram-flow">
+        <div class="diagram-box dim">Ex 1 (320 tok)</div>
+        <div class="diagram-arrow">+</div>
+        <div class="diagram-box dim">Ex 2 (410 tok)</div>
+        <div class="diagram-arrow">+</div>
+        <div class="diagram-box dim">Ex 3 (280 tok)</div>
+        <div class="diagram-arrow">+</div>
+        <div class="diagram-box dim">Ex 4 (380 tok)</div>
+        <div class="diagram-arrow">&rarr;</div>
+        <div class="diagram-box accent">1 390 / 2 048 tokens (68 %)</div>
+    </div>
+
+    <h3>Attention Masking for Packing</h3>
+    <p>Without correct masking, token N in example 2 attends to tokens from example 1, causing cross-contamination. The fix is a <strong>block-diagonal attention mask</strong>: each packed sub-sequence attends only to itself. Flash Attention 2 (<code>flash_attn&ge;2.1</code>) supports variable-length sequences natively via <code>cu_seqlens</code> &mdash; this is the most compute-efficient path.</p>
+
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Config key</th><th>Axolotl</th><th>TRL SFTTrainer</th><th>torchtune</th></tr></thead>
+            <tbody>
+                <tr><td>Enable packing</td><td><code>sample_packing: true</code></td><td><code>packing=True</code></td><td><code>packed: true</code> in dataset config</td></tr>
+                <tr><td>Cross-attn prevention</td><td>auto via Flash Attn 2</td><td>manual <code>DataCollatorForSeq2Seq</code></td><td>built-in cu_seqlens path</td></tr>
+                <tr><td>Typical throughput gain</td><td>2&ndash;4&times; on short datasets</td><td>2&ndash;3&times;</td><td>2&ndash;4&times;</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">When not to pack</div>
+        <p>If your dataset has very long examples (&gt;3 000 tokens on average) packing offers diminishing returns and the bookkeeping overhead can cost more than the padding it saves. Evaluate effective tokens-per-second with and without packing on your actual dataset before committing.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-06">
+    <div class="slide-number">06</div>
+    <h2>Frameworks &mdash; Axolotl, TRL, Unsloth, torchtune</h2>
+    <p>Four frameworks dominate open-source SFT. Each makes different tradeoffs between configurability, speed, and ease of use.</p>
+
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>Axolotl <span class="badge">OpenAccess-AI-Collective</span></h4>
+            <p><strong>Config-file driven.</strong> One <code>config.yaml</code> specifies everything: base model, dataset type, template, LoRA rank, scheduler, sample packing, Flash Attn, DeepSpeed/FSDP. Preferred for production pipelines and multi-dataset merging. Supports <code>deepspeed_zero3</code>, gradient checkpointing, 4-bit QLoRA out of the box. <code>axolotl train config.yaml</code> &rarr; HF Hub push.</p>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>TRL SFTTrainer <span class="badge">HuggingFace</span></h4>
+            <p><strong>Python-API driven.</strong> Extends <code>transformers.Trainer</code>. Integrates with <code>peft</code> for LoRA, <code>bitsandbytes</code> for QLoRA, and the full HF ecosystem. <code>SFTTrainer</code> + <code>DataCollatorForCompletionOnlyLM</code> covers 90 % of SFT tasks. TRL &ge;0.10 added <code>GRPOTrainer</code>, <code>DPOTrainer</code>, <code>PPOTrainer</code> &mdash; all in one package.</p>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Unsloth <span class="badge">unslothai</span></h4>
+            <p><strong>Speed-optimised.</strong> Hand-written Triton kernels for attention, RoPE, and cross-entropy. Claims 2&times; throughput vs native HF on single-GPU consumer hardware (A100 40 GB, 3090, 4090). Drop-in replacement: <code>from unsloth import FastLanguageModel</code>. Supports Llama 3.x, Mistral, Gemma, Phi-3, Qwen-2.5. Free tier covers most consumer GPUs; Pro tier for multi-GPU.</p>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>torchtune <span class="badge">PyTorch</span></h4>
+            <p><strong>Framework-native.</strong> Pure PyTorch, no HF Trainer. Ships ready-made recipes: <code>full_finetune_single_device</code>, <code>lora_finetune_distributed</code>. Config via YAML. Designed for reproducibility and easy recipe modification. Excellent for research baselines where you want full control over the training loop. Added Llama-3.1 405B support and QAT (Quantisation-Aware Training) in torchtune 0.4.</p>
+        </div>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">Which to choose</div>
+        <p>For <strong>quick experiments on a single GPU</strong>: Unsloth (fastest iteration). For <strong>production pipelines with complex dataset mixes</strong>: Axolotl. For <strong>HF-ecosystem integration</strong> (PEFT, evaluate, trl reward training): TRL. For <strong>research with custom training loops</strong>: torchtune.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-07">
+    <div class="slide-number">07</div>
+    <h2>Evaluating SFT Runs &mdash; Perplexity, Eval Suites</h2>
+    <p>Training loss falling does not mean the model is getting better at the task you care about. A comprehensive evaluation strategy triangulates across three axes: intrinsic metrics, downstream benchmarks, and human / model preference ratings.</p>
+
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Metric</th><th>What it measures</th><th>Tooling</th><th>Caveats</th></tr></thead>
+            <tbody>
+                <tr><td><strong>Eval loss / PPL</strong></td><td>Generalisation to held-out splits of the training distribution</td><td>HF Trainer eval_dataset</td><td>Only valid if eval set is drawn from same distribution; doesn't detect mode collapse</td></tr>
+                <tr><td><strong>MT-Bench</strong></td><td>Multi-turn instruction following, scored by GPT-4 on 8 categories</td><td><code>fastchat</code> eval harness</td><td>LLM-as-judge bias; GPT-4 scores can drift between API versions</td></tr>
+                <tr><td><strong>AlpacaEval 2.0</strong></td><td>Length-controlled win rate vs GPT-4 Turbo on 805 prompts</td><td><code>alpaca_eval</code> library</td><td>Measures verbosity preference; reward-hacked by longer outputs</td></tr>
+                <tr><td><strong>IFEval</strong></td><td>Strict instruction-following on programmatically verifiable constraints (word count, JSON, format)</td><td>lm-evaluation-harness</td><td>Covers only verifiable format constraints, not semantic quality</td></tr>
+                <tr><td><strong>MMLU / BBH</strong></td><td>Knowledge retention after fine-tuning</td><td>lm-evaluation-harness</td><td>Watch for catastrophic forgetting of base capabilities</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">The forgetting trap</div>
+        <p>SFT on a narrow domain dataset commonly degrades performance on unrelated benchmarks. Run MMLU and BBH before and after every SFT run. If accuracy drops &gt;2 % absolute, consider reducing learning rate, shortening training, or mixing in general-domain data. The typical culprit is a too-high learning rate (3e-5 for 7B models; 1e-5 for 70B+ models) or too many epochs on a small dataset.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-08">
+    <div class="slide-number">08</div>
+    <h2>Hardware Reality &mdash; VRAM Math, Throughput, Multi-GPU</h2>
+    <p>VRAM is the hard constraint. Before writing a single config line, compute the memory budget:</p>
+
+    <div class="code-block">
+        <div class="code-header">VRAM formula for full-precision SFT (bytes)</div>
+<pre><code><span class="cm"># Per-parameter costs for bf16 + full-precision optimiser state (AdamW)</span>
+<span class="cm"># 2 bytes (bf16 param) + 4 bytes (fp32 copy) + 8 bytes (Adam m + v) = 14 bytes/param</span>
+<span class="cm"># Activations = batch_size * seq_len * hidden_dim * num_layers * ~2 bytes</span>
+
+params_7b = <span class="num">7e9</span>
+base_vram  = params_7b * <span class="num">14</span>   <span class="cm"># ≈ 98 GB &mdash; needs 2&times;A100 80 GB minimum</span>
+
+<span class="cm"># With gradient checkpointing (store only layer boundaries):</span>
+<span class="cm"># activation VRAM drops ~8x, adds ~30% compute overhead</span>
+
+<span class="cm"># QLoRA (4-bit base + bf16 LoRA adapters):</span>
+qlora_vram = params_7b * <span class="num">0.5</span> + <span class="num">0.01</span> * params_7b * <span class="num">14</span>  <span class="cm"># ≈ 4.5 GB + 1 GB adapters</span></code></pre>
+    </div>
+
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Model size</th><th>Full SFT bf16</th><th>QLoRA 4-bit</th><th>Practical GPU</th></tr></thead>
+            <tbody>
+                <tr><td>7B</td><td>~98 GB</td><td>~10 GB</td><td>1&times; A100 40 GB (QLoRA) or 1&times; 3090/4090 (QLoRA)</td></tr>
+                <tr><td>13B</td><td>~182 GB</td><td>~16 GB</td><td>1&times; A100 40 GB (QLoRA) or 2&times; A100 (full)</td></tr>
+                <tr><td>70B</td><td>~980 GB</td><td>~48 GB</td><td>1&times; A100 80 GB (QLoRA) or 4&times; H100 (full)</td></tr>
+                <tr><td>405B</td><td>~5.7 TB</td><td>~200 GB</td><td>8&times; H100 minimum (full); 4&times; H100 (QLoRA + pipeline)</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">Multi-GPU strategies</div>
+        <p><strong>FSDP (FullyShardedDataParallel):</strong> shards parameters, gradients, and optimiser states across GPUs &mdash; linear VRAM scaling, requires fast NVLink. <strong>DeepSpeed ZeRO-3:</strong> similar sharding but with optional CPU offload for optimiser states. <strong>Tensor parallelism:</strong> splits individual layers across GPUs &mdash; needed for 70B+ full SFT. Axolotl supports all three via config; torchtune ships FSDP2 recipes natively.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-09">
+    <div class="slide-number">09</div>
+    <h2>What to Take Away</h2>
+    <ul>
+        <li><strong>Fine-tune for capability gaps</strong>, not for what prompting can already do. RAG, few-shot, and prompt caching are cheaper first steps.</li>
+        <li><strong>Dataset quality beats dataset size.</strong> Deduplicate, length-filter, and PII-scrub before training. 10 k clean examples often outperforms 500 k noisy ones.</li>
+        <li><strong>Use the tokeniser's own chat template.</strong> <code>tokenizer.apply_chat_template()</code> from <code>transformers&ge;4.34</code>. Never hand-format; template bugs are silent and devastating.</li>
+        <li><strong>Mask prompt tokens.</strong> Set <code>train_on_inputs: false</code> (Axolotl) or use <code>DataCollatorForCompletionOnlyLM</code> (TRL). Loss on user turns wastes compute and teaches the wrong distribution.</li>
+        <li><strong>Pack samples</strong> when your average example length is &lt;50 % of the context window. Expect 2&ndash;4&times; throughput improvement.</li>
+        <li><strong>Know the VRAM math before picking a strategy.</strong> QLoRA puts 7B fine-tuning on a single consumer GPU; full SFT of 7B needs &ge;2&times;A100 40 GB.</li>
+        <li><strong>Evaluate beyond training loss.</strong> Run MT-Bench, IFEval, and MMLU before and after; catch catastrophic forgetting early.</li>
+    </ul>
+
+    <div class="callout">
+        <div class="callout-label">Where to next</div>
+        <p>Deck 02 covers LoRA and its variants &mdash; the adapter techniques that make SFT practical on consumer hardware without touching the base weights. Deck 03 shows what SFT alone can't fix and why RLHF and PPO were invented.</p>
+    </div>
+</section>
+
+<footer class="footer">
+    <p>Part of the <a href="https://github.com/BrendanJamesLynskey/LLM_Hub_Fine_Tuning">Fine-Tuning &amp; PEFT Series</a></p>
+    <p style="margin-top: 0.5rem; font-size: 0.8rem;"><a href="https://github.com/BrendanJamesLynskey/LLM_Hub_Fine_Tuning">Back to Series Index</a></p>
+</footer>
+<script>
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            e.preventDefault();
+            const target = document.querySelector(this.getAttribute('href'));
+            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.style.opacity = '1';
+                entry.target.style.transform = 'translateY(0)';
+            }
+        });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.slide').forEach(slide => {
+        slide.style.opacity = '0';
+        slide.style.transform = 'translateY(30px)';
+        slide.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+        observer.observe(slide);
+    });
+</script>
+</body>
+</html>
